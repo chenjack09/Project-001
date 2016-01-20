@@ -22,3 +22,8 @@ source('test2.R')
 source("test.R")
 
 11%%4
+
+g<-2
+g
+g<-g+1
+g
