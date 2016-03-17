@@ -1,0 +1,269 @@
+---
+title: "Econ294 Final Exam"
+author: "Jack Chen"
+date: "March 16, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(eval = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+This paper analyzes the relationship between flight cancellation and flight delay with each of the following four facets:
+
+1) weather
+2) time
+3) airport destination
+4) plane characteristics
+
+First, we install/load the R packages needed for the final. 
+
+```{r package-load, message=T}
+library(knitr)
+library("dplyr")  
+library("RSQLite") 
+library("ggplot2")
+library ("nycflights13")
+```
+
+Load the 'nycflights13' package and the specific 'flights' dataset:
+
+```{r}
+my_db <- src_sqlite("my_db.sqlite3", create = T)
+
+flights_sqlite <- copy_to(
+  my_db, flights, temporary = FALSE
+)
+
+flights<-collect(flights_sqlite)
+```
+
+
+
+**Facet: Weather**
+
+First load the 'weather' data. Inner jion with the previously loaded dataset 'flights' by month, day, and hour. Group by temperature and summarize to give the number of delays and the number of cancellation corresponding to each temperature value.
+
+```{r}
+weather_sqlite <- copy_to(
+  my_db, weather, temporary = FALSE
+)
+
+weather<-collect(weather_sqlite)
+
+weather_db<-inner_join(weather,flights, c("month","day","hour"))
+
+
+weather_db<-summarize(
+  
+  group_by(weather_db,temp),
+  
+  number_delay = sum(dep_delay>0),
+  
+  number_cancelled = sum(is.na(arr_delay))
+)
+
+View(weather_db)
+```
+
+The plot below shows flight cancellation and delay as a function of temperature.
+
+In the graph, red indicates cancellation and blue indicates delay.
+
+For most points in temperature, number of flights delayed far excceed the number of flights cancelled.
+
+```{r}
+plot(weather_db$temp, weather_db$number_delay, main="Flight Delay and Cancellation on temperature", xlab="Temperature", ylab="Number of deplays/cancellation",ylim=c(0,2500),col=4)
+
+par(new = TRUE)
+
+plot(weather_db$temp, weather_db$number_cancelled, main="Flight Delay and Cancellation on temperature", xlab="Temperature", ylab="Number of deplays/cancellation",ylim=c(0,2500),col=2)
+```
+
+
+Run a regression of delay against cancellation, temperature wise
+
+```{r}
+reg1<-lm(number_delay~number_cancelled,weather_db)
+summary(reg)
+```
+
+The linear OLS regression shows the relationship between number of delay and number of cancellation is statistically significant.The coeifficient on the number of cancellation is 74.4. This means the model predicts that, on average, an additional flight cancelled is associated with roughly 74 flights being delayed.
+
+we can visually verify the relation between these two variables through a scatter plot
+
+```{r}
+plot(weather_db$number_cancelled, weather_db$number_delay, main="Flight Facet: Weather", xlab="Number of cancellations", ylab="Number of delays")
+```
+
+With the facet of temperature, the scatter plot clearly demonstrates a positive correlation between delay and cancellation of flights.
+
+
+**Facet: Time**
+
+```{r}
+my_db <- src_sqlite("my_db.sqlite3", create = T)
+
+flights_sqlite <- copy_to(
+  my_db, flights, temporary = FALSE
+)
+
+flights<-collect(flights_sqlite)
+
+TIME<-summarize(
+  
+    group_by(flights, month),
+    
+    number_of_delay = sum(dep_delay>0),
+    
+    number_of_cancelled = sum(is.na(arr_delay))
+)
+  
+db<-collect(TIME)
+View(db)
+```
+
+plot number of delays as a function of month
+
+```{r}
+plot(db$month, db$number_of_delay, type='l', main="Flight Delay and Cancellation Overtime", ylim=c(0,14000), xlab="Month", ylab="Number of deplays/cancellation",col=4)
+
+par(new = TRUE)
+
+plot(db$month, db$number_of_cancelled, type='l', ylim=c(0,14000), xlab="Month", ylab="Number of deplays/cancelled", col=2)
+```
+
+Note: red curve indicates number of cancellation; blue curve indicates number of delay.
+
+The graph suggest positive correlation btw cancellation and delay. 
+
+For each month in 2013, the number of flights cancelled is much much smaller compared to the number of flights delayed.
+
+Cancellation remains relatively constant, whereas flight delay fluctuates more drastically from month to month. 
+
+The largest monthly difference between the number of cancellation and the number of delay occurs in July. 
+
+Run a regression of number of deplay against number of cancellation (month-wise)
+
+```{r}
+reg2<-lm(number_of_delay ~ number_of_cancelled,db)
+summary(reg)
+```
+
+The coef. is 3.530, which means with respect to time facet, on average each flight cancellation is associated with around three and a half flight delays.
+
+
+Visual verification: confirm the relation found with a scatter plot of the two variables 
+
+```{r}
+plot(db$number_of_cancelled,db$number_of_delay, main="Flight Facet: Time", xlab="Number of cancellations", ylab="Number of delays")
+```
+
+As one can see, the plot does demonstrate that flight cancellation and delay are correlated positively, with the facet of time (month of the year in this case). 
+
+
+**Facet: airport destination** 
+
+```{r}
+air_dest<-summarize(
+  
+          group_by(flght, dest),
+          
+          number_delay = sum(dep_delay > 0, rm.na=T),
+          
+          number_cancelled = sum(is.na(arr_delay)),
+          
+          count = n()
+)
+
+### View(air_dest) -- Note the overwhelming number of NA's in the delay column. 
+
+#Filter the dataset to keep observation (i.e. destination airport) with no "NA".
+
+airdest<-filter(air_dest,!is.na(number_delay))
+
+View(airdest)
+```
+
+Create a ggplot.
+
+```{r}
+ggplot(airdest,
+       aes(x=dest, y=number_delay)) +
+  geom_boxplot() +
+  geom_point(aes(color = number_cancelled))
+```
+
+Run a regression. 
+
+```{r}
+reg3<-lm(number_delay~number_cancelled,airdest)
+
+summary(reg3)
+```
+
+The OLS linear model predicts the relationship btw number of delay and cancellation with respect to airports destination is as follows:
+
+1. on average, zero cancellation of flight is associated with roughly 28 flight delays.
+
+2. on average, an additional flight cancellation is associated with roughly 55 additional flight delays.
+
+
+**Facet: Plane Characteristics**
+
+```{r}
+planes_sqlite <- copy_to(
+  my_db, planes, temporary = FALSE, 
+  indexes = list("tailnum")
+)
+
+planes<-collect(planes_sqlite)
+
+plane_char<-inner_join(planes,flights, "tailnum")
+
+
+plane_char_final<-summarize(
+  
+  group_by(plane_char, tailnum),
+  
+  number_delay = sum(dep_delay > 0, rm.na=T),
+  
+  number_cancelled = sum(is.na(arr_delay)),
+  
+  count = n()
+)
+
+# View(plane_char_final) - again many NA's
+
+#filter/remove rows with NA's
+
+plane_char_final <- na.omit(plane_char_final)
+
+View(plane_char_final)
+```
+
+Create a ggplot:
+
+```{r}
+ggplot(plane_char_final,
+       aes(x=number_cancelled, y=number_delay)) +
+  geom_point()
+```
+
+Run a regression to estimate relation btw cancellation and delay.
+
+```{r}   
+reg4<-lm(number_delay~number_cancelled,plane_char_final)
+
+summary(reg4)
+```
+
+The OLS linear model predicts the relationship btw number of delay and cancellation with respect to plane characteristics (tailnum) is as follows:
+
+1. on average, zero cancellation of flight is associated with roughly 21 flight delays.
+
+2. on average, an additional flight cancellation is associated with roughly 21 additional flight delays.
+
+
